@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generador Procedural de Pueblos 3D Completo - Three.js</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #070b14;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8fafc;
+    }
+    #ui-panel {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      width: 320px;
+      max-height: calc(100vh - 28px);
+      overflow-y: auto;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.75);
+      z-index: 20;
+    }
+    #ui-panel h2 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 8px;
+    }
+    .control-row { margin-bottom: 10px; }
+    .control-row label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #cbd5e1;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .control-row label span {
+      color: #38bdf8;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    input[type="range"], select {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      color: #f8fafc;
+      accent-color: #38bdf8;
+      padding: 5px;
+      font-size: 12px;
+    }
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin: 10px 0;
+      padding: 8px;
+      background: rgba(30, 41, 59, 0.6);
+      border-radius: 6px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #e2e8f0;
+      cursor: pointer;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    button {
+      flex: 1;
+      background: #0284c7;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #0369a1; }
+    button.alt { background: #475569; }
+    button.alt:hover { background: #64748b; }
+    .stats {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 11px;
+      color: #94a3b8;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+    .stats b { color: #facc15; }
+  </style>
+</head>
+<body>
+
+  <div id="ui-panel">
+    <h2>Generador de Pueblos 3D</h2>
+
+    <div class="control-row">
+      <label>Semilla (Seed): <span id="lbl-seed">42105</span></label>
+      <input type="range" id="inp-seed" min="1" max="99999" value="42105">
+    </div>
+
+    <div class="control-row">
+      <label>Tamaño del Pueblo (Manzanas): <span id="lbl-size">3x3</span></label>
+      <input type="range" id="inp-size" min="2" max="4" value="3">
+    </div>
+
+    <div class="control-row">
+      <label>Densidad de Viviendas: <span id="lbl-houses">85%</span></label>
+      <input type="range" id="inp-houses" min="30" max="100" value="85">
+    </div>
+
+    <div class="control-row">
+      <label>Altura Máxima (Plantas): <span id="lbl-floors">3</span></label>
+      <input type="range" id="inp-floors" min="1" max="3" value="3">
+    </div>
+
+    <div class="control-row">
+      <label>Bosque, Setos y Rocas: <span id="lbl-trees">80%</span></label>
+      <input type="range" id="inp-trees" min="10" max="100" value="80">
+    </div>
+
+    <div class="control-row">
+      <label>Curvatura del Río: <span id="lbl-river">6.0</span></label>
+      <input type="range" id="inp-river" min="0" max="12" step="0.5" value="6.0">
+    </div>
+
+    <div class="checkbox-grid">
+      <label class="checkbox-item"><input type="checkbox" id="chk-river" checked> Río y Puente</label>
+      <label class="checkbox-item"><input type="checkbox" id="chk-church" checked> Iglesia y Plaza</label>
+      <label class="checkbox-item"><input type="checkbox" id="chk-lamps" checked> Farolas Forja</label>
+      <label class="checkbox-item"><input type="checkbox" id="chk-fences" checked> Vallas y Huertos</label>
+    </div>
+
+    <div class="control-row">
+      <label>Hora e Iluminación</label>
+      <select id="inp-time">
+        <option value="day" selected>Día Soleado (Claridad Total)</option>
+        <option value="golden">Atardecer Dorado (Farolas + Sol)</option>
+        <option value="night">Noche Cerrada (Alumbrado Público)</option>
+      </select>
+    </div>
+
+    <div class="btn-group">
+      <button id="btn-generate">Regenerar</button>
+      <button id="btn-random" class="alt">Nuevo Pueblo</button>
+    </div>
+
+    <div class="stats">
+      <div>Edificios: <b id="st-houses">0</b></div>
+      <div>Árboles/Setos: <b id="st-trees">0</b></div>
+      <div>Farolas: <b id="st-lamps">0</b></div>
+      <div>Puentes: <b id="st-bridges">1</b></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    // --- 1. PRNG DETERMINISTA (MULBERRY32) ---
+    class PRNG {
+      constructor(seed) { this.s = seed >>> 0; }
+      next() {
+        let t = this.s += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      }
+      range(min, max) { return min + this.next() * (max - min); }
+      int(min, max) { return Math.floor(this.range(min, max + 1)); }
+      pick(arr) { return arr[this.int(0, arr.length - 1)]; }
+    }
+
+    // --- 2. GENERADOR DE TEXTURAS PROCEDURALES DE ALTA DEFINICIÓN ---
+    function createProceduralTextures() {
+      // Textura de Tejas y Muros (Atlas)
+      const atlasCanvas = document.createElement('canvas');
+      atlasCanvas.width = atlasCanvas.height = 1024;
+      const ctx = atlasCanvas.getContext('2d');
+
+      // Banda 1 (Y: 0 - 256): Teja árabe rojiza con relieve sombreado
+      ctx.fillStyle = '#8c2d19';
+      ctx.fillRect(0, 0, 1024, 256);
+      for (let r = 0; r < 8; r++) {
+        const y = r * 32;
+        for (let c = 0; c < 32; c++) {
+          const x = c * 32;
+          const grad = ctx.createLinearGradient(x, y, x + 32, y);
+          grad.addColorStop(0.0, '#5c190b');
+          grad.addColorStop(0.5, '#c94a29');
+          grad.addColorStop(1.0, '#471207');
+          ctx.fillStyle = grad;
+          ctx.fillRect(x + 1, y + 2, 30, 29);
+        }
+      }
+
+      // Banda 2 (Y: 256 - 512): Estuco / Cal de fachada con grano sutil
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 256, 1024, 256);
+      for (let i = 0; i < 12000; i++) {
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(203,213,225,0.35)' : 'rgba(255,255,255,0.4)';
+        ctx.fillRect(Math.random() * 1024, 256 + Math.random() * 256, 3, 3);
+      }
+
+      // Banda 3 (Y: 512 - 768): Mampostería de piedra (Puente, zócalos, iglesia)
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(0, 512, 1024, 256);
+      for (let r = 0; r < 6; r++) {
+        const y = 512 + r * 42.6;
+        const off = (r % 2) * 48;
+        for (let x = -off; x < 1024; x += 96) {
+          ctx.fillStyle = (r + x) % 3 === 0 ? '#94a3b8' : '#475569';
+          ctx.fillRect(x + 3, y + 3, 90, 37);
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x + 3, y + 3, 90, 37);
+        }
+      }
+
+      // Banda 4 (Y: 768 - 1024): Tablazón de madera rústica
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(0, 768, 1024, 256);
+      for (let x = 0; x < 1024; x += 32) {
+        ctx.fillStyle = x % 64 === 0 ? '#5c2808' : '#3b1704';
+        ctx.fillRect(x + 2, 768, 28, 256);
+      }
+
+      const atlasTex = new THREE.CanvasTexture(atlasCanvas);
+      atlasTex.wrapS = atlasTex.wrapT = THREE.RepeatWrapping;
+
+      // Textura de Calzada Empedrada (Cobblestone)
+      const roadCanvas = document.createElement('canvas');
+      roadCanvas.width = roadCanvas.height = 512;
+      const rCtx = roadCanvas.getContext('2d');
+      rCtx.fillStyle = '#334155';
+      rCtx.fillRect(0, 0, 512, 512);
+      for (let y = 0; y < 512; y += 16) {
+        const shift = (y % 32 === 0) ? 0 : 12;
+        for (let x = -shift; x < 512; x += 24) {
+          rCtx.fillStyle = ((x + y) % 5 === 0) ? '#475569' : '#64748b';
+          rCtx.beginPath();
+          rCtx.roundRect(x + 2, y + 2, 20, 12, 4);
+          rCtx.fill();
+        }
+      }
+      const roadTex = new THREE.CanvasTexture(roadCanvas);
+      roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
+      roadTex.repeat.set(4, 30);
+
+      // Textura de Halo de Luz en el suelo
+      const glowCanvas = document.createElement('canvas');
+      glowCanvas.width = glowCanvas.height = 256;
+      const gCtx = glowCanvas.getContext('2d');
+      const rad = gCtx.createRadialGradient(128, 128, 2, 128, 128, 128);
+      rad.addColorStop(0.0, 'rgba(254, 240, 138, 0.85)');
+      rad.addColorStop(0.45, 'rgba(245, 158, 11, 0.4)');
+      rad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+      gCtx.fillStyle = rad;
+      gCtx.fillRect(0, 0, 256, 256);
+      const glowTex = new THREE.CanvasTexture(glowCanvas);
+
+      return { atlasTex, roadTex, glowTex };
+    }
+
+    // --- 3. INICIALIZACIÓN DE ESCENA, CÁMARA Y RENDERER ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 500);
+    camera.position.set(78, 52, 88);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 2, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+
+    // Sistema de Iluminación Global
+    const hemiLight = new THREE.HemisphereLight('#e0f2fe', '#3a5a40', 0.65);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight('#fffbeb', 1.35);
+    sunLight.position.set(75, 95, 60);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 260;
+    const dShadow = 85;
+    sunLight.shadow.camera.left = -dShadow;
+    sunLight.shadow.camera.right = dShadow;
+    sunLight.shadow.camera.top = dShadow;
+    sunLight.shadow.camera.bottom = -dShadow;
+    sunLight.shadow.bias = -0.0003;
+    scene.add(sunLight);
+
+    // Luces puntuales cálidas para la Plaza y el Puente
+    const plazaLight = new THREE.PointLight('#f59e0b', 1.5, 45, 1.5);
+    plazaLight.position.set(-14, 6, 0);
+    scene.add(plazaLight);
+
+    const bridgeLight = new THREE.PointLight('#f59e0b', 1.5, 45, 1.5);
+    bridgeLight.position.set(28, 6, 0);
+    scene.add(bridgeLight);
+
+    // --- 4. MATERIALES COMPARTIDOS ---
+    const { atlasTex, roadTex, glowTex } = createProceduralTextures();
+
+    const matAtlas = new THREE.MeshStandardMaterial({
+      map: atlasTex,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+
+    const matRoad = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      roughness: 0.9,
+      metalness: 0.05
+    });
+
+    const matSidewalk = new THREE.MeshStandardMaterial({
+      color: '#94a3b8',
+      roughness: 0.85
+    });
+
+    const matWater = new THREE.MeshStandardMaterial({
+      color: '#0284c7',
+      roughness: 0.12,
+      metalness: 0.65,
+      transparent: true,
+      opacity: 0.86
+    });
+
+    const matFoliage = new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      roughness: 0.78,
+      metalness: 0.05
+    });
+
+    const matTrunk = new THREE.MeshStandardMaterial({
+      color: '#5c2808',
+      roughness: 0.9
+    });
+
+    const matIron = new THREE.MeshStandardMaterial({
+      color: '#1e293b',
+      roughness: 0.4,
+      metalness: 0.85
+    });
+
+    const matGlassGlow = new THREE.MeshStandardMaterial({
+      color: '#fef08a',
+      emissive: '#f59e0b',
+      emissiveIntensity: 3.0,
+      roughness: 0.15
+    });
+
+    const matWindowGlass = new THREE.MeshStandardMaterial({
+      color: '#38bdf8',
+      emissive: '#0284c7',
+      emissiveIntensity: 0.3,
+      roughness: 0.1,
+      metalness: 0.8
+    });
+
+    const matLightPool = new THREE.MeshBasicMaterial({
+      map: glowTex,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    const matRock = new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      roughness: 0.9,
+      metalness: 0.05
+    });
+
+    // --- 5. FUNCIONES GEOMÉTRICAS AUXILIARES ---
+    function mapUVBand(geom, vMin, vMax) {
+      const uv = geom.attributes.uv;
+      for (let i = 0; i < uv.count; i++) {
+        uv.setY(i, vMin + uv.getY(i) * (vMax - vMin));
+      }
+      uv.needsUpdate = true;
+    }
+
+    // Cubierta a dos aguas hermética (Base exactamente en Y = 0)
+    function createRoofGeometry(width, depth, ridgeH, overX, overZ, thick) {
+      const hw = width * 0.5;
+      const slope = ridgeH / hw;
+      const drop = slope * overX;
+      const totD = depth + overZ * 2.0;
+
+      const shape = new THREE.Shape();
+      shape.moveTo(0, ridgeH + thick);
+      shape.lineTo(-hw - overX, -drop + thick);
+      shape.lineTo(-hw - overX, -drop);
+      shape.lineTo(-hw, 0.0);
+      shape.lineTo(0, ridgeH);
+      shape.lineTo(hw, 0.0);
+      shape.lineTo(hw + overX, -drop);
+      shape.lineTo(hw + overX, -drop + thick);
+      shape.closePath();
+
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: totD, bevelEnabled: false });
+      geom.translate(0, 0, -totD * 0.5);
+      mapUVBand(geom, 0.75, 1.00); // Banda Tejas
+      geom.computeVertexNormals();
+      return geom;
+    }
+
+    // Hastial triangular para cerrar el tejado
+    function createGableGeometry(width, ridgeH, thick) {
+      const hw = width * 0.5;
+      const shape = new THREE.Shape();
+      shape.moveTo(-hw, 0.0);
+      shape.lineTo(hw, 0.0);
+      shape.lineTo(0, ridgeH);
+      shape.closePath();
+
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: thick, bevelEnabled: false });
+      geom.translate(0, 0, -thick * 0.5);
+      mapUVBand(geom, 0.50, 0.75); // Banda Estuco
+      geom.computeVertexNormals();
+      return geom;
+    }
+
+    // Helper seguro para crear InstancedMesh con colores inicializados y sin culling prematuro
+    function makeInstanced(geom, mat, maxCount) {
+      const safeCount = Math.max(1, maxCount);
+      const mesh = new THREE.InstancedMesh(geom, mat, safeCount);
+      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false; // Garantiza visibilidad en todo el mapa
+
+      // Inicializar todas las instancias a escala 0 y color blanco por defecto
+      const zeroMat = new THREE.Matrix4().makeScale(0, 0, 0);
+      const white = new THREE.Color(0xffffff);
+      for (let i = 0; i < safeCount; i++) {
+        mesh.setMatrixAt(i, zeroMat);
+        mesh.setColorAt(i, white);
+      }
+      return mesh;
+    }
+
+    // --- 6. MOTOR GENERADOR DEL PUEBLO ---
+    class VillageWorld {
+      constructor(scene) {
+        this.scene = scene;
+        this.objects = [];
+        this.waterMesh = null;
+      }
+
+      clear() {
+        this.objects.forEach(obj => {
+          this.scene.remove(obj);
+          if (obj.geometry) obj.geometry.dispose();
+        });
+        this.objects = [];
+        this.waterMesh = null;
+      }
+
+      // Función matemática de la curva del río en X según Z
+      getRiverX(z, curveAmp) {
+        return 28.0 + Math.sin(z * 0.045) * curveAmp;
+      }
+
+      generate(cfg) {
+        this.clear();
+        const rng = new PRNG(cfg.seed);
+
+        const WORLD_SIZE = 180;
+        const RIVER_WIDTH = 13.0;
+
+        // 1. TERRENO VERDE CON CAUCE DE RÍO EXCAVADO
+        const terrainGeom = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 96, 96);
+        terrainGeom.rotateX(-Math.PI / 2);
+        const tPos = terrainGeom.attributes.position;
+        const tCols = new Float32Array(tPos.count * 3);
+
+        const colGrass1 = new THREE.Color('#3a5a40');
+        const colGrass2 = new THREE.Color('#344e41');
+        const colSand = new THREE.Color('#a39171');
+        const tmpCol = new THREE.Color();
+
+        for (let i = 0; i < tPos.count; i++) {
+          const vx = tPos.getX(i);
+          const vz = tPos.getZ(i);
+          let vy = 0;
+
+          if (cfg.hasRiver) {
+            const rx = this.getRiverX(vz, cfg.riverCurve);
+            const dist = Math.abs(vx - rx);
+            if (dist < RIVER_WIDTH * 0.65) {
+              const norm = dist / (RIVER_WIDTH * 0.65);
+              vy = -2.2 * Math.cos(norm * Math.PI * 0.5);
+            } else if (dist > 55) {
+              // Colinas suaves en los bordes exteriores del mapa
+              vy = Math.sin(vx * 0.05) * Math.cos(vz * 0.05) * 2.5 + (dist - 55) * 0.08;
+            }
+          }
+
+          tPos.setY(i, vy);
+
+          // Color por vértice del terreno
+          if (vy < -0.25) {
+            tmpCol.copy(colSand);
+          } else {
+            const n = (Math.sin(vx * 0.12) + Math.cos(vz * 0.12)) * 0.5 + 0.5;
+            tmpCol.lerpColors(colGrass1, colGrass2, n);
+          }
+          tCols[i * 3] = tmpCol.r;
+          tCols[i * 3 + 1] = tmpCol.g;
+          tCols[i * 3 + 2] = tmpCol.b;
+        }
+
+        terrainGeom.setAttribute('color', new THREE.BufferAttribute(tCols, 3));
+        terrainGeom.computeVertexNormals();
+
+        const terrainMat = new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          roughness: 0.92,
+          metalness: 0.02
+        });
+        const terrainMesh = new THREE.Mesh(terrainGeom, terrainMat);
+        terrainMesh.receiveShadow = true;
+        this.scene.add(terrainMesh);
+        this.objects.push(terrainMesh);
+
+        // 2. LÁMINA DE AGUA DEL RÍO
+        if (cfg.hasRiver) {
+          const waterGeom = new THREE.PlaneGeometry(RIVER_WIDTH + 6, WORLD_SIZE, 24, 80);
+          waterGeom.rotateX(-Math.PI / 2);
+          const wPos = waterGeom.attributes.position;
+          for (let i = 0; i < wPos.count; i++) {
+            const lx = wPos.getX(i);
+            const lz = wPos.getZ(i);
+            wPos.setX(i, lx + this.getRiverX(lz, cfg.riverCurve));
+            wPos.setY(i, -0.55);
+          }
+          waterGeom.computeVertexNormals();
+          this.waterMesh = new THREE.Mesh(waterGeom, matWater);
+          this.waterMesh.receiveShadow = true;
+          this.scene.add(this.waterMesh);
+          this.objects.push(this.waterMesh);
+        }
+
+        // 3. SISTEMA DE CALLES CON RELIEVE Y BORDILLOS 3D (Cero Z-Fighting)
+        const streetGroup = new THREE.Group();
+        const addPavedRoad = (x, z, w, d, rotY = 0) => {
+          // Base de acera / bordillo de piedra
+          const curbG = new THREE.BoxGeometry(w + 2.2, 0.16, d + 0.4);
+          const curbM = new THREE.Mesh(curbG, matSidewalk);
+          curbM.position.set(x, 0.08, z);
+          curbM.rotation.y = rotY;
+          curbM.receiveShadow = true;
+          curbM.castShadow = true;
+          streetGroup.add(curbM);
+
+          // Calzada de adoquines elevada sobre la acera
+          const roadG = new THREE.BoxGeometry(w, 0.20, d);
+          const roadM = new THREE.Mesh(roadG, matRoad);
+          roadM.position.set(x, 0.10, z);
+          roadM.rotation.y = rotY;
+          roadM.receiveShadow = true;
+          streetGroup.add(roadM);
+        };
+
+        // Avenidas Norte-Sur (X = -32 y X = 0)
+        const spanZ = cfg.gridSize * 32 + 20;
+        addPavedRoad(-32, 0, 6.5, spanZ);
+        addPavedRoad(0, 0, 7.5, spanZ);
+        if (!cfg.hasRiver) {
+          addPavedRoad(28, 0, 6.5, spanZ);
+        } else {
+          // Paseo fluvial al otro lado del río
+          addPavedRoad(52, 0, 6.0, spanZ);
+        }
+
+        // Calles Transversales Este-Oeste
+        const crossZList = [-30, 0, 30];
+        if (cfg.gridSize >= 4) {
+          crossZList.push(-58, 58);
+        }
+
+        crossZList.forEach(cz => {
+          if (cz === 0 && cfg.hasRiver) {
+            // La avenida central (Z = 0) se corta en el río para dar paso al Puente de Piedra
+            const riverCenter0 = this.getRiverX(0, cfg.riverCurve);
+            const leftLen = (riverCenter0 - RIVER_WIDTH * 0.55) - (-50);
+            const leftCenter = -50 + leftLen * 0.5;
+            addPavedRoad(leftCenter, 0, 6.5, leftLen, Math.PI / 2);
+
+            const rightStart = riverCenter0 + RIVER_WIDTH * 0.55;
+            const rightLen = 68 - rightStart;
+            addPavedRoad(rightStart + rightLen * 0.5, 0, 6.5, rightLen, Math.PI / 2);
+          } else {
+            const maxX = cfg.hasRiver ? (this.getRiverX(cz, cfg.riverCurve) - RIVER_WIDTH * 0.75) : 45;
+            const len = maxX - (-48);
+            addPavedRoad(-48 + len * 0.5, cz, 5.5, len, Math.PI / 2);
+          }
+        });
+
+        this.scene.add(streetGroup);
+        this.objects.push(streetGroup);
+
+        // 4. PUENTE DE PIEDRA EN ARCO SOBRE EL RÍO
+        const lampsList = [];
+        if (cfg.hasRiver) {
+          const bx = this.getRiverX(0, cfg.riverCurve);
+          const bridgeGroup = new THREE.Group();
+
+          // Tablero abombado en 3 tramos y pretiles
+          const bLen = RIVER_WIDTH + 6.0;
+          const deckG = new THREE.BoxGeometry(bLen, 0.9, 7.5);
+          mapUVBand(deckG, 0.25, 0.50);
+          const deckM = new THREE.Mesh(deckG, matAtlas);
+          deckM.position.set(bx, 1.35, 0);
+          deckM.castShadow = deckM.receiveShadow = true;
+          bridgeGroup.add(deckM);
+
+          // Rampas de acceso al puente
+          [-1, 1].forEach(side => {
+            const rampG = new THREE.BoxGeometry(4.5, 0.6, 7.5);
+            mapUVBand(rampG, 0.25, 0.50);
+            const rampM = new THREE.Mesh(rampG, matAtlas);
+            rampM.position.set(bx + side * (bLen * 0.5 + 1.8), 0.65, 0);
+            rampM.rotation.z = -side * 0.22;
+            rampM.castShadow = rampM.receiveShadow = true;
+            bridgeGroup.add(rampM);
+          });
+
+          // Pretiles (muros laterales del puente)
+          [-3.4, 3.4].forEach(pz => {
+            const wallG = new THREE.BoxGeometry(bLen + 4, 1.1, 0.65);
+            mapUVBand(wallG, 0.25, 0.50);
+            const wallM = new THREE.Mesh(wallG, matAtlas);
+            wallM.position.set(bx, 2.1, pz);
+            wallM.castShadow = wallM.receiveShadow = true;
+            bridgeGroup.add(wallM);
+          });
+
+          // Pilares sumergidos en el río
+          [-4.2, 0, 4.2].forEach(px => {
+            const pierG = new THREE.CylinderGeometry(1.1, 1.4, 3.8, 8);
+            mapUVBand(pierG, 0.25, 0.50);
+            const pierM = new THREE.Mesh(pierG, matAtlas);
+            pierM.position.set(bx + px, -0.2, 0);
+            pierM.castShadow = pierM.receiveShadow = true;
+            bridgeGroup.add(pierM);
+          });
+
+          this.scene.add(bridgeGroup);
+          this.objects.push(bridgeGroup);
+
+          // 4 Farolas en las esquinas del puente
+          if (cfg.hasLamps) {
+            lampsList.push(
+              { x: bx - bLen * 0.45, y: 2.5, z: -3.4, rot: 0 },
+              { x: bx + bLen * 0.45, y: 2.5, z: -3.4, rot: 0 },
+              { x: bx - bLen * 0.45, y: 2.5, z:  3.4, rot: Math.PI },
+              { x: bx + bLen * 0.45, y: 2.5, z:  3.4, rot: Math.PI }
+            );
+          }
+        }
+
+        // 5. PLAZA MAYOR, IGLESIA CON CAMPANARIO Y FUENTE CENTRAL
+        let buildingCount = 0;
+        if (cfg.hasChurch) {
+          const civicGroup = new THREE.Group();
+          const cx = -16.0, cz = -15.0;
+
+          // Explanada empedrada de la plaza
+          const plazaG = new THREE.BoxGeometry(22, 0.18, 22);
+          const plazaM = new THREE.Mesh(plazaG, matSidewalk);
+          plazaM.position.set(cx, 0.09, cz);
+          plazaM.receiveShadow = true;
+          civicGroup.add(plazaM);
+
+          // Fuente monumental en el centro de la plaza (cx + 4, cz)
+          const fx = cx + 4.5, fz = cz;
+          const basinG = new THREE.CylinderGeometry(2.6, 2.8, 0.75, 12);
+          mapUVBand(basinG, 0.25, 0.50);
+          const basinM = new THREE.Mesh(basinG, matAtlas);
+          basinM.position.set(fx, 0.45, fz);
+          basinM.castShadow = basinM.receiveShadow = true;
+          civicGroup.add(basinM);
+
+          const fWaterG = new THREE.CylinderGeometry(2.3, 2.3, 0.65, 12);
+          const fWaterM = new THREE.Mesh(fWaterG, matWater);
+          fWaterM.position.set(fx, 0.52, fz);
+          civicGroup.add(fWaterM);
+
+          const fPillarG = new THREE.CylinderGeometry(0.45, 0.65, 2.4, 8);
+          mapUVBand(fPillarG, 0.25, 0.50);
+          const fPillarM = new THREE.Mesh(fPillarG, matAtlas);
+          fPillarM.position.set(fx, 1.4, fz);
+          fPillarM.castShadow = true;
+          civicGroup.add(fPillarM);
+
+          // Nave de la Iglesia y Torre del Campanario
+          const ix = cx - 4.0, iz = cz;
+          const naveW = 8.5, naveH = 7.0, naveD = 13.0;
+          const naveG = new THREE.BoxGeometry(naveW, naveH, naveD);
+          mapUVBand(naveG, 0.50, 0.75);
+          const naveM = new THREE.Mesh(naveG, matAtlas);
+          naveM.position.set(ix, naveH * 0.5, iz);
+          naveM.castShadow = naveM.receiveShadow = true;
+          civicGroup.add(naveM);
+
+          const cRoofG = createRoofGeometry(naveW, naveD, 3.2, 0.6, 0.6, 0.25);
+          const cRoofM = new THREE.Mesh(cRoofG, matAtlas);
+          cRoofM.position.set(ix, naveH, iz);
+          cRoofM.castShadow = cRoofM.receiveShadow = true;
+          civicGroup.add(cRoofM);
+
+          [-naveD * 0.5 + 0.15, naveD * 0.5 - 0.15].forEach(gz => {
+            const cGableG = createGableGeometry(naveW, 3.2, 0.3);
+            const cGableM = new THREE.Mesh(cGableG, matAtlas);
+            cGableM.position.set(ix, naveH, iz + gz);
+            civicGroup.add(cGableM);
+          });
+
+          // Torre del Campanario
+          const towerG = new THREE.BoxGeometry(4.2, 16.5, 4.2);
+          mapUVBand(towerG, 0.25, 0.50);
+          const towerM = new THREE.Mesh(towerG, matAtlas);
+          towerM.position.set(ix, 8.25, iz + naveD * 0.5 + 1.5);
+          towerM.castShadow = towerM.receiveShadow = true;
+          civicGroup.add(towerM);
+
+          // Chapitel del Campanario
+          const spireG = new THREE.ConeGeometry(3.2, 5.5, 4);
+          spireG.rotateY(Math.PI / 4);
+          mapUVBand(spireG, 0.75, 1.00);
+          const spireM = new THREE.Mesh(spireG, matAtlas);
+          spireM.position.set(ix, 16.5 + 2.75, iz + naveD * 0.5 + 1.5);
+          spireM.castShadow = true;
+          civicGroup.add(spireM);
+
+          this.scene.add(civicGroup);
+          this.objects.push(civicGroup);
+          buildingCount++;
+        }
+
+        // 6. PLANIFICACIÓN DE PARCELAS, CASAS, ÁRBOLES, SETOS, VALLAS Y ROCAS
+        const houses = [];
+        const trees = [];
+        const hedges = [];
+        const fences = [];
+        const rocks = [];
+
+        const lotRows = [];
+        const maxRange = cfg.gridSize * 14;
+        for (let z = -maxRange; z <= maxRange; z += 13.5) {
+          // Respetar el cruce de las calles transversales
+          const nearCross = crossZList.some(cz => Math.abs(z - cz) < 7.5);
+          if (!nearCross) lotRows.push(z);
+        }
+
+        // Hileras de fachadas alineadas a las avenidas
+        const corridors = [
+          { x: -41.5, rot: 0 },
+          { x: -22.5, rot: Math.PI },
+          { x: -9.5,  rot: 0 },
+          { x:  9.5,  rot: Math.PI }
+        ];
+        if (cfg.hasRiver) {
+          corridors.push({ x: 43.0, rot: 0 }, { x: 61.0, rot: Math.PI });
+        } else {
+          corridors.push({ x: 18.5, rot: 0 }, { x: 37.5, rot: Math.PI });
+        }
+
+        corridors.forEach(corr => {
+          lotRows.forEach(lz => {
+            // Evitar solapar con la Plaza Mayor / Iglesia
+            if (cfg.hasChurch && corr.x > -26 && corr.x < -6 && lz > -28 && lz < -2) return;
+
+            // Evitar meter casas dentro del cauce del río
+            if (cfg.hasRiver) {
+              const rx = this.getRiverX(lz, cfg.riverCurve);
+              if (Math.abs(corr.x - rx) < RIVER_WIDTH * 0.95) return;
+            }
+
+            if (rng.next() * 100 <= cfg.houseDensity) {
+              const floors = rng.int(1, cfg.maxFloors);
+              const tint = rng.pick([0xffffff, 0xfef3c7, 0xffedd5, 0xf1f5f9, 0xfde68a, 0xe2e8f0]);
+              const hx = corr.x + rng.range(-0.4, 0.4);
+              const hz = lz + rng.range(-0.4, 0.4);
+              const hRot = corr.rot + rng.range(-0.04, 0.04);
+
+              houses.push({
+                x: hx, z: hz, rot: hRot,
+                floors: floors,
+                tint: tint,
+                chimney: rng.next() > 0.35,
+                balcony: floors >= 2 && rng.next() > 0.3
+              });
+
+              // Vallas de madera en los laterales de la parcela
+              if (cfg.hasFences) {
+                fences.push(
+                  { x: hx, z: hz - 5.5, rot: hRot + Math.PI / 2 },
+                  { x: hx, z: hz + 5.5, rot: hRot + Math.PI / 2 }
+                );
+              }
+            } else {
+              // Solar ajardinado con árboles y setos
+              if (rng.next() * 100 <= cfg.treeDensity) {
+                trees.push({
+                  x: corr.x + rng.range(-2.5, 2.5),
+                  z: lz + rng.range(-2.5, 2.5),
+                  scale: rng.range(0.85, 1.35),
+                  isPine: rng.next() > 0.45,
+                  color: rng.pick([0x2d6a4f, 0x40916c, 0x1b4332, 0x52b788, 0x3a5a40])
+                });
+              }
+            }
+
+            // Setos junto a la acera
+            if (rng.next() * 100 <= cfg.treeDensity * 0.75) {
+              const hedgeX = corr.x + (corr.rot === 0 ? 4.8 : -4.8);
+              hedges.push({ x: hedgeX, z: lz + 4.5, rot: 0 });
+            }
+          });
+        });
+
+        // Farolas a lo largo de todas las avenidas
+        if (cfg.hasLamps) {
+          for (let lz = -maxRange; lz <= maxRange; lz += 15) {
+            lampsList.push(
+              { x: -35.8, y: 0, z: lz, rot: 0 },
+              { x: -28.2, y: 0, z: lz, rot: Math.PI },
+              { x:  -4.3, y: 0, z: lz, rot: 0 },
+              { x:   4.3, y: 0, z: lz, rot: Math.PI }
+            );
+            if (cfg.hasRiver) {
+              lampsList.push({ x: 48.5, y: 0, z: lz, rot: 0 });
+            }
+          }
+        }
+
+        // Bosque periférico y rocas de ribera
+        const forestCount = Math.floor(85 * (cfg.treeDensity / 100));
+        for (let i = 0; i < forestCount; i++) {
+          const angle = rng.range(0, Math.PI * 2);
+          const dist = rng.range(52, 82);
+          const tx = Math.cos(angle) * dist;
+          const tz = Math.sin(angle) * dist;
+
+          if (cfg.hasRiver && Math.abs(tx - this.getRiverX(tz, cfg.riverCurve)) < RIVER_WIDTH * 0.85) continue;
+
+          trees.push({
+            x: tx, z: tz,
+            scale: rng.range(0.9, 1.6),
+            isPine: rng.next() > 0.35,
+            color: rng.pick([0x1b4332, 0x2d6a4f, 0x3a5a40, 0x40916c, 0x6b705c])
+          });
+        }
+
+        // Rocas y cantos rodados en las orillas del río
+        if (cfg.hasRiver) {
+          for (let rz = -78; rz <= 78; rz += 4.5) {
+            if (Math.abs(rz) < 7) continue; // Dejar libre el puente
+            const rx = this.getRiverX(rz, cfg.riverCurve);
+            [-1, 1].forEach(side => {
+              if (rng.next() > 0.35) {
+                rocks.push({
+                  x: rx + side * (RIVER_WIDTH * 0.48 + rng.range(-0.6, 1.2)),
+                  y: -0.35,
+                  z: rz + rng.range(-1.5, 1.5),
+                  scale: rng.range(0.5, 1.4),
+                  color: rng.pick([0x64748b, 0x475569, 0x94a3b8])
+                });
+              }
+            });
+          }
+        }
+
+        // 7. CONSTRUCCIÓN DE INSTANCED MESHES (CASAS)
+        const HW = 6.2, HD = 7.6, FH = 2.8, PH = 0.55, RH = 1.9;
+
+        const plinthG = new THREE.BoxGeometry(HW + 0.3, PH, HD + 0.3);
+        mapUVBand(plinthG, 0.25, 0.50);
+
+        const wallG = new THREE.BoxGeometry(HW, FH, HD);
+        mapUVBand(wallG, 0.50, 0.75);
+
+        const roofG = createRoofGeometry(HW, HD, RH, 0.5, 0.55, 0.2);
+        const gableG = createGableGeometry(HW, RH, 0.28);
+
+        const winG = new THREE.BoxGeometry(1.15, 1.35, 0.28);
+        const doorG = new THREE.BoxGeometry(1.4, 2.25, 0.32);
+        mapUVBand(doorG, 0.0, 0.25);
+
+        const chimG = new THREE.BoxGeometry(0.85, 2.3, 0.85);
+        mapUVBand(chimG, 0.25, 0.50);
+
+        const balcG = new THREE.BoxGeometry(2.6, 0.95, 0.9);
+
+        let totFloors = 0, totWins = 0, totChims = 0, totBalcs = 0;
+        houses.forEach(h => {
+          totFloors += h.floors;
+          totWins += h.floors * 4;
+          if (h.chimney) totChims++;
+          if (h.balcony) totBalcs++;
+        });
+
+        const iPlinth = makeInstanced(plinthG, matAtlas, houses.length);
+        const iWall = makeInstanced(wallG, matAtlas, totFloors);
+        const iRoof = makeInstanced(roofG, matAtlas, houses.length);
+        const iGable = makeInstanced(gableG, matAtlas, houses.length * 2);
+        const iWin = makeInstanced(winG, matWindowGlass, totWins);
+        const iDoor = makeInstanced(doorG, matAtlas, houses.length);
+        const iChim = makeInstanced(chimG, matAtlas, totChims);
+        const iBalc = makeInstanced(balcG, matIron, totBalcs);
+
+        const dMat = new THREE.Matrix4();
+        const dPos = new THREE.Vector3();
+        const dQuat = new THREE.Quaternion();
+        const dScale = new THREE.Vector3(1, 1, 1);
+        const cWhite = new THREE.Color(0xffffff);
+        const cTint = new THREE.Color();
+
+        let pIdx = 0, wIdx = 0, rIdx = 0, gIdx = 0, winIdx = 0, dIdx = 0, cIdx = 0, bIdx = 0;
+
+        houses.forEach(h => {
+          cTint.setHex(h.tint);
+          const hQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), h.rot);
+          const hBase = new THREE.Vector3(h.x, 0, h.z);
+          const qId = new THREE.Quaternion();
+          const qBack = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
+          const place = (mesh, idx, lx, ly, lz, lq, col = cWhite) => {
+            dPos.set(lx, ly, lz).applyQuaternion(hQuat).add(hBase);
+            dQuat.copy(hQuat).multiply(lq);
+            dMat.compose(dPos, dQuat, dScale);
+            mesh.setMatrixAt(idx, dMat);
+            mesh.setColorAt(idx, col);
+          };
+
+          // Zócalo
+          place(iPlinth, pIdx++, 0, PH * 0.5, 0, qId, cWhite);
+
+          // Plantas
+          for (let f = 0; f < h.floors; f++) {
+            const fy = PH + FH * 0.5 + f * FH;
+            place(iWall, wIdx++, 0, fy, 0, qId, cTint);
+
+            if (f === 0) {
+              place(iDoor, dIdx++, 0, PH + 1.12, HD * 0.5 + 0.08, qId, cWhite);
+            } else if (f === 1 && h.balcony) {
+              place(iBalc, bIdx++, 0, fy - 0.7, HD * 0.5 + 0.45, qId, cWhite);
+            }
+
+            // Ventanas delanteras y traseras
+            [-1.85, 1.85].forEach(wx => {
+              place(iWin, winIdx++, wx, fy + 0.1, HD * 0.5 + 0.06, qId, cWhite);
+              place(iWin, winIdx++, wx, fy + 0.1, -HD * 0.5 - 0.06, qBack, cWhite);
+            });
+          }
+
+          // Coronación del muro
+          const topY = PH + h.floors * FH;
+          place(iGable, gIdx++, 0, topY, HD * 0.5 - 0.14, qId, cTint);
+          place(iGable, gIdx++, 0, topY, -HD * 0.5 + 0.14, qBack, cTint);
+          place(iRoof, rIdx++, 0, topY, 0, qId, cWhite);
+
+          if (h.chimney) {
+            place(iChim, cIdx++, 1.6, topY + 1.15, 1.3, qId, cWhite);
+          }
+        });
+
+        // 8. INSTANCIACIÓN DE FAROLAS DE FORJA Y HALOS DE LUZ
+        const postG = new THREE.CylinderGeometry(0.09, 0.16, 4.0, 8);
+        postG.translate(0, 2.0, 0);
+        const armG = new THREE.BoxGeometry(0.1, 0.1, 0.85);
+        armG.translate(0, 3.95, 0.42);
+        const lanternG = new THREE.CylinderGeometry(0.22, 0.14, 0.45, 6);
+        lanternG.translate(0, 3.75, 0.8);
+        const poolG = new THREE.PlaneGeometry(7.5, 7.5);
+        poolG.rotateX(-Math.PI / 2);
+
+        const iLampPost = makeInstanced(postG, matIron, lampsList.length);
+        const iLampArm = makeInstanced(armG, matIron, lampsList.length);
+        const iLantern = makeInstanced(lanternG, matGlassGlow, lampsList.length);
+        const iLightPool = makeInstanced(poolG, matLightPool, lampsList.length);
+
+        lampsList.forEach((l, idx) => {
+          dPos.set(l.x, l.y, l.z);
+          dQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), l.rot);
+          dScale.set(1, 1, 1);
+          dMat.compose(dPos, dQuat, dScale);
+
+          iLampPost.setMatrixAt(idx, dMat);
+          iLampArm.setMatrixAt(idx, dMat);
+          iLantern.setMatrixAt(idx, dMat);
+
+          // Halo de luz proyectado en el pavimento debajo del farol
+          const poolOffset = new THREE.Vector3(0, 0, 0.8).applyQuaternion(dQuat);
+          dPos.set(l.x + poolOffset.x, l.y + 0.22, l.z + poolOffset.z);
+          dMat.compose(dPos, new THREE.Quaternion(), dScale);
+          iLightPool.setMatrixAt(idx, dMat);
+        });
+
+        // 9. INSTANCIACIÓN DE VEGETACIÓN (ÁRBOLES, PINOS, SETOS, VALLAS Y ROCAS)
+        const trunkG = new THREE.CylinderGeometry(0.22, 0.38, 2.8, 7);
+        trunkG.translate(0, 1.4, 0);
+
+        const oakCrownG = new THREE.DodecahedronGeometry(1.95, 1);
+        oakCrownG.translate(0, 3.8, 0);
+
+        const pineCrownG = new THREE.ConeGeometry(2.1, 4.8, 7);
+        pineCrownG.translate(0, 4.0, 0);
+
+        const hedgeG = new THREE.BoxGeometry(2.6, 0.95, 0.95);
+        hedgeG.translate(0, 0.48, 0);
+
+        const fenceG = new THREE.BoxGeometry(4.5, 1.0, 0.16);
+        mapUVBand(fenceG, 0.0, 0.25);
+        fenceG.translate(0, 0.5, 0);
+
+        const rockG = new THREE.DodecahedronGeometry(0.85, 0);
+
+        const iTrunk = makeInstanced(trunkG, matTrunk, trees.length);
+        const iOak = makeInstanced(oakCrownG, matFoliage, trees.length);
+        const iPine = makeInstanced(pineCrownG, matFoliage, trees.length);
+        const iHedge = makeInstanced(hedgeG, matFoliage, hedges.length);
+        const iFence = makeInstanced(fenceG, matAtlas, fences.length);
+        const iRock = makeInstanced(rockG, matRock, rocks.length);
+
+        let oakIdx = 0, pineIdx = 0;
+        const cVeg = new THREE.Color();
+
+        trees.forEach((t, idx) => {
+          dPos.set(t.x, 0, t.z);
+          dQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), idx * 1.7);
+          dScale.set(t.scale, t.scale, t.scale);
+          dMat.compose(dPos, dQuat, dScale);
+
+          iTrunk.setMatrixAt(idx, dMat);
+          cVeg.setHex(t.color);
+
+          if (t.isPine) {
+            iPine.setMatrixAt(pineIdx, dMat);
+            iPine.setColorAt(pineIdx, cVeg);
+            pineIdx++;
+          } else {
+            iOak.setMatrixAt(oakIdx, dMat);
+            iOak.setColorAt(oakIdx, cVeg);
+            oakIdx++;
+          }
+        });
+
+        dScale.set(1, 1, 1);
+        hedges.forEach((h, idx) => {
+          dPos.set(h.x, 0, h.z);
+          dQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), h.rot);
+          dMat.compose(dPos, dQuat, dScale);
+          iHedge.setMatrixAt(idx, dMat);
+          cVeg.setHex(idx % 2 === 0 ? 0x2d6a4f : 0x1b4332);
+          iHedge.setColorAt(idx, cVeg);
+        });
+
+        fences.forEach((f, idx) => {
+          dPos.set(f.x, 0, f.z);
+          dQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), f.rot);
+          dMat.compose(dPos, dQuat, dScale);
+          iFence.setMatrixAt(idx, dMat);
+        });
+
+        rocks.forEach((r, idx) => {
+          dPos.set(r.x, r.y, r.z);
+          dQuat.setFromAxisAngle(new THREE.Vector3(1, 1, 0).normalize(), idx);
+          dScale.set(r.scale * 1.2, r.scale * 0.75, r.scale);
+          dMat.compose(dPos, dQuat, dScale);
+          iRock.setMatrixAt(idx, dMat);
+          cVeg.setHex(r.color);
+          iRock.setColorAt(idx, cVeg);
+        });
+
+        // 10. ENVÍO A GPU Y REGISTRO EN LA ESCENA
+        const allInstanced = [
+          iPlinth, iWall, iRoof, iGable, iWin, iDoor, iChim, iBalc,
+          iLampPost, iLampArm, iLantern, iLightPool,
+          iTrunk, iOak, iPine, iHedge, iFence, iRock
+        ];
+
+        allInstanced.forEach(m => {
+          m.instanceMatrix.needsUpdate = true;
+          if (m.instanceColor) m.instanceColor.needsUpdate = true;
+          this.scene.add(m);
+          this.objects.push(m);
+        });
+
+        // Actualizar métricas en el panel
+        document.getElementById('st-houses').textContent = houses.length + buildingCount;
+        document.getElementById('st-trees').textContent = trees.length + hedges.length;
+        document.getElementById('st-lamps').textContent = lampsList.length;
+        document.getElementById('st-bridges').textContent = cfg.hasRiver ? 1 : 0;
+      }
+    }
+
+    // --- 7. GESTIÓN DE ATMÓSFERA Y HORA DEL DÍA ---
+    function applyAtmosphere(preset) {
+      if (preset === 'day') {
+        scene.background = new THREE.Color('#7dd3fc');
+        scene.fog = new THREE.FogExp2('#7dd3fc', 0.0045);
+        hemiLight.color.set('#ffffff');
+        hemiLight.groundColor.set('#3a5a40');
+        hemiLight.intensity = 0.75;
+        sunLight.color.set('#fffbeb');
+        sunLight.intensity = 1.45;
+        sunLight.position.set(70, 100, 60);
+        matGlassGlow.emissiveIntensity = 0.4;
+        matWindowGlass.emissiveIntensity = 0.1;
+        matLightPool.opacity = 0.0;
+        plazaLight.intensity = 0.0;
+        bridgeLight.intensity = 0.0;
+      } else if (preset === 'golden') {
+        scene.background = new THREE.Color('#1e1b4b');
+        scene.fog = new THREE.FogExp2('#1e1b4b', 0.0065);
+        hemiLight.color.set('#fb923c');
+        hemiLight.groundColor.set('#0f172a');
+        hemiLight.intensity = 0.45;
+        sunLight.color.set('#f97316');
+        sunLight.intensity = 1.1;
+        sunLight.position.set(85, 32, 40);
+        matGlassGlow.emissiveIntensity = 3.2;
+        matWindowGlass.emissiveIntensity = 1.2;
+        matLightPool.opacity = 0.85;
+        plazaLight.intensity = 2.0;
+        bridgeLight.intensity = 2.0;
+      } else if (preset === 'night') {
+        scene.background = new THREE.Color('#030712');
+        scene.fog = new THREE.FogExp2('#030712', 0.008);
+        hemiLight.color.set('#38bdf8');
+        hemiLight.groundColor.set('#020617');
+        hemiLight.intensity = 0.18;
+        sunLight.color.set('#60a5fa');
+        sunLight.intensity = 0.25;
+        sunLight.position.set(-50, 70, -40);
+        matGlassGlow.emissiveIntensity = 5.0;
+        matWindowGlass.emissiveIntensity = 2.4;
+        matLightPool.opacity = 1.0;
+        plazaLight.intensity = 3.2;
+        bridgeLight.intensity = 3.2;
+      }
+    }
+
+    // --- 8. VINCULACIÓN DE LA INTERFAZ Y BUCLE DE ANIMACIÓN ---
+    const world = new VillageWorld(scene);
+
+    function rebuildFromUI() {
+      const cfg = {
+        seed: parseInt(document.getElementById('inp-seed').value, 10),
+        gridSize: parseInt(document.getElementById('inp-size').value, 10),
+        houseDensity: parseInt(document.getElementById('inp-houses').value, 10),
+        maxFloors: parseInt(document.getElementById('inp-floors').value, 10),
+        treeDensity: parseInt(document.getElementById('inp-trees').value, 10),
+        riverCurve: parseFloat(document.getElementById('inp-river').value),
+        hasRiver: document.getElementById('chk-river').checked,
+        hasChurch: document.getElementById('chk-church').checked,
+        hasLamps: document.getElementById('chk-lamps').checked,
+        hasFences: document.getElementById('chk-fences').checked,
+        time: document.getElementById('inp-time').value
+      };
+
+      document.getElementById('lbl-seed').textContent = cfg.seed;
+      document.getElementById('lbl-size').textContent = cfg.gridSize + 'x' + cfg.gridSize;
+      document.getElementById('lbl-houses').textContent = cfg.houseDensity + '%';
+      document.getElementById('lbl-floors').textContent = cfg.maxFloors;
+      document.getElementById('lbl-trees').textContent = cfg.treeDensity + '%';
+      document.getElementById('lbl-river').textContent = cfg.riverCurve.toFixed(1);
+
+      applyAtmosphere(cfg.time);
+      world.generate(cfg);
+    }
+
+    document.querySelectorAll('#ui-panel input, #ui-panel select').forEach(el => {
+      el.addEventListener('input', rebuildFromUI);
+    });
+
+    document.getElementById('btn-generate').addEventListener('click', rebuildFromUI);
+    document.getElementById('btn-random').addEventListener('click', () => {
+      document.getElementById('inp-seed').value = Math.floor(Math.random() * 99999) + 1;
+      rebuildFromUI();
+    });
+
+    rebuildFromUI();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      // Animación suave de ondulación en el río
+      if (world.waterMesh) {
+        world.waterMesh.position.y = Math.sin(t * 2.2) * 0.05;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
