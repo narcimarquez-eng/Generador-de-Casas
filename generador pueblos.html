@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generador de Pueblos 3D - Estilo RPG Mágico</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0; overflow: hidden;
+      background-color: #030712;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8fafc;
+    }
+    #ui-container {
+      position: absolute; top: 16px; left: 16px; width: 310px;
+      max-height: calc(100vh - 32px); overflow-y: auto;
+      background: rgba(15, 23, 42, 0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px; padding: 16px;
+      box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.7);
+      z-index: 10;
+    }
+    #ui-container h2 {
+      margin: 0 0 12px 0; font-size: 14px; font-weight: 700;
+      color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .ctrl-group { margin-bottom: 12px; }
+    .ctrl-group label {
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: #94a3b8; margin-bottom: 4px; font-weight: 500;
+    }
+    .ctrl-group label span { color: #38bdf8; font-weight: 700; font-family: monospace; }
+    input[type="range"], select {
+      width: 100%; background: #1e293b; border: 1px solid #334155;
+      border-radius: 4px; color: #f8fafc; accent-color: #38bdf8;
+      padding: 5px; font-size: 12px;
+    }
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    button {
+      flex: 1; background: #0284c7; color: #ffffff; border: none;
+      border-radius: 6px; padding: 9px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #0369a1; }
+    button.secondary { background: #334155; }
+    button.secondary:hover { background: #475569; }
+    .stats-panel {
+      margin-top: 14px; padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 11px; color: #64748b;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stats-panel span { color: #cbd5e1; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div id="ui-container">
+    <h2>Pueblo Mágico RPG</h2>
+    <div class="ctrl-group">
+      <label>Semilla: <span id="val-seed">12345</span></label>
+      <input type="range" id="param-seed" min="1" max="99999" value="12345">
+    </div>
+    <div class="ctrl-group">
+      <label>Densidad de Casas: <span id="val-density">85%</span></label>
+      <input type="range" id="param-density" min="30" max="100" value="85">
+    </div>
+    <div class="ctrl-group">
+      <label>Plantas Máximas: <span id="val-floors">2</span></label>
+      <input type="range" id="param-floors" min="1" max="3" value="2">
+    </div>
+    <div class="ctrl-group">
+      <label>Densidad Vegetación: <span id="val-veg">70%</span></label>
+      <input type="range" id="param-veg" min="10" max="100" value="70">
+    </div>
+    <div class="ctrl-group">
+      <label>Ambiente Lumínico</label>
+      <select id="param-time">
+        <option value="sunset" selected>Atardecer Mágico</option>
+        <option value="noon">Mediodía Soleado</option>
+        <option value="night">Noche Arcana</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button id="btn-regen">Regenerar</button>
+      <button id="btn-random" class="secondary">Aleatorio</button>
+    </div>
+    <div class="stats-panel">
+      <div>Casas construidas: <span id="stat-houses">0</span></div>
+      <div>Murallas / Torres: <span id="stat-walls">0</span></div>
+      <div>Farolas y cristales: <span id="stat-lamps">0</span></div>
+      <div>Árboles y setos: <span id="stat-veg">0</span></div>
+      <div>Draw Calls GPU: <span>~28 llamadas</span></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    // ============================================================
+    // 1. PRNG MULBERRY32 (DETERMINISTA)
+    // ============================================================
+    class PRNG {
+      constructor(seed) { this.s = seed; }
+      next() {
+        let t = this.s += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      }
+      range(min, max) { return min + this.next() * (max - min); }
+      rangeInt(min, max) { return Math.floor(this.range(min, max + 1)); }
+      choice(arr) { return arr[this.rangeInt(0, arr.length - 1)]; }
+    }
+
+    // ============================================================
+    // 2. ATLAS DE TEXTURAS
+    // ============================================================
+    function generateVillageAtlas() {
+      const size = 1024;
+      const dCanvas = document.createElement('canvas');
+      const bCanvas = document.createElement('canvas');
+      dCanvas.width = dCanvas.height = bCanvas.width = bCanvas.height = size;
+      const dCtx = dCanvas.getContext('2d');
+      const bCtx = bCanvas.getContext('2d');
+
+      // Tejas
+      dCtx.fillStyle = '#9a3412'; dCtx.fillRect(0, 0, size, 256);
+      bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 0, size, 256);
+      for (let r = 0; r < 8; r++) {
+        const y = r * 32;
+        for (let c = 0; c < 32; c++) {
+          const x = c * 32;
+          const gD = dCtx.createLinearGradient(x, y, x + 32, y);
+          gD.addColorStop(0.0, '#7c2d12'); gD.addColorStop(0.5, '#c2410c'); gD.addColorStop(1.0, '#431407');
+          dCtx.fillStyle = gD; dCtx.fillRect(x, y + 2, 30, 28);
+          const gB = bCtx.createLinearGradient(x, y, x + 32, y);
+          gB.addColorStop(0.0, '#1a1a1a'); gB.addColorStop(0.5, '#ffffff'); gB.addColorStop(1.0, '#101010');
+          bCtx.fillStyle = gB; bCtx.fillRect(x, y + 2, 30, 28);
+        }
+      }
+      // Estuco
+      dCtx.fillStyle = '#f8fafc'; dCtx.fillRect(0, 256, size, 256);
+      bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 256, size, 256);
+      const imgD = dCtx.getImageData(0, 256, size, 256);
+      const imgB = bCtx.getImageData(0, 256, size, 256);
+      for (let i = 0; i < imgD.data.length; i += 4) {
+        const n = (Math.random() - 0.5) * 18;
+        imgD.data[i] = Math.min(255, Math.max(0, 245 + n));
+        imgD.data[i + 1] = Math.min(255, Math.max(0, 242 + n));
+        imgD.data[i + 2] = Math.min(255, Math.max(0, 235 + n));
+        imgB.data[i] = imgB.data[i + 1] = imgB.data[i + 2] = 128 + n * 2;
+      }
+      dCtx.putImageData(imgD, 0, 256);
+      bCtx.putImageData(imgB, 0, 256);
+      // Piedra
+      dCtx.fillStyle = '#475569'; dCtx.fillRect(0, 512, size, 256);
+      bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 512, size, 256);
+      for (let r = 0; r < 5; r++) {
+        const y = 512 + r * 51.2, offset = (r % 2) * 50;
+        for (let x = -offset; x < size; x += 100) {
+          dCtx.fillStyle = (r + x) % 3 === 0 ? '#64748b' : '#334155';
+          dCtx.fillRect(x + 2, y + 2, 96, 47);
+          dCtx.strokeStyle = '#0f172a'; dCtx.lineWidth = 4;
+          dCtx.strokeRect(x + 2, y + 2, 96, 47);
+          bCtx.fillStyle = '#e2e8f0'; bCtx.fillRect(x + 2, y + 2, 96, 47);
+          bCtx.strokeStyle = '#000000'; bCtx.lineWidth = 6;
+          bCtx.strokeRect(x + 2, y + 2, 96, 47);
+        }
+      }
+      // Madera
+      dCtx.fillStyle = '#3b1d11'; dCtx.fillRect(0, 768, size, 256);
+      bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 768, size, 256);
+      for (let x = 0; x < size; x += 32) {
+        dCtx.fillStyle = x % 64 === 0 ? '#542615' : '#27120a';
+        dCtx.fillRect(x + 1, 768, 30, 256);
+        bCtx.fillStyle = '#b0b0b0'; bCtx.fillRect(x + 1, 768, 30, 256);
+        bCtx.fillStyle = '#0a0a0a'; bCtx.fillRect(x, 768, 2, 256);
+      }
+
+      const diffTex = new THREE.CanvasTexture(dCanvas);
+      diffTex.wrapS = diffTex.wrapT = THREE.RepeatWrapping;
+      const bumpTex = new THREE.CanvasTexture(bCanvas);
+      bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
+      return { diffTex, bumpTex };
+    }
+
+    function generateStoneTexture() {
+      const size = 512;
+      const cD = document.createElement('canvas');
+      const cB = document.createElement('canvas');
+      cD.width = cD.height = cB.width = cB.height = size;
+      const dCtx = cD.getContext('2d');
+      const bCtx = cB.getContext('2d');
+
+      // Fondo MUY claro para que se vea contra la oscuridad
+      dCtx.fillStyle = '#a8b2c4'; dCtx.fillRect(0, 0, size, size);
+      bCtx.fillStyle = '#606060'; bCtx.fillRect(0, 0, size, size);
+
+      const rows = 6;
+      const rowH = size / rows;
+      for (let r = 0; r < rows; r++) {
+        const y = r * rowH;
+        const offset = (r % 2) * rowH;
+        for (let x = -offset; x < size + rowH * 2; x += rowH * 2) {
+          const bw = rowH * 2 - 4;
+          const bh = rowH - 4;
+          const shade = 0.85 + Math.random() * 0.3;
+          const rr = Math.floor(0xc4 * shade);
+          const gg = Math.floor(0xcd * shade);
+          const bb = Math.floor(0xda * shade);
+          dCtx.fillStyle = `rgb(${rr},${gg},${bb})`;
+          dCtx.fillRect(x + 2, y + 2, bw, bh);
+          dCtx.strokeStyle = '#4a5568';
+          dCtx.lineWidth = 3;
+          dCtx.strokeRect(x + 2, y + 2, bw, bh);
+          const bs = Math.floor(160 + shade * 70);
+          bCtx.fillStyle = `rgb(${bs},${bs},${bs})`;
+          bCtx.fillRect(x + 2, y + 2, bw, bh);
+          bCtx.strokeStyle = '#000000';
+          bCtx.lineWidth = 4;
+          bCtx.strokeRect(x + 2, y + 2, bw, bh);
+        }
+      }
+      const diffTex = new THREE.CanvasTexture(cD);
+      diffTex.wrapS = diffTex.wrapT = THREE.RepeatWrapping;
+      const bumpTex = new THREE.CanvasTexture(cB);
+      bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
+      return { diffTex, bumpTex };
+    }
+
+    function generateLightPoolTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      grad.addColorStop(0.0, 'rgba(254, 240, 138, 0.75)');
+      grad.addColorStop(0.4, 'rgba(245, 158, 11, 0.35)');
+      grad.addColorStop(0.8, 'rgba(217, 119, 6, 0.08)');
+      grad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 256);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      return tex;
+    }
+
+    // ============================================================
+    // 3. ESCENA, CÁMARA, RENDER
+    // ============================================================
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 350);
+    camera.position.set(58, 42, 68);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 4, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+
+    const hemiLight = new THREE.HemisphereLight('#38bdf8', '#0f172a', 0.3);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight('#fdba74', 0.8);
+    sunLight.position.set(50, 55, 30);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 200;
+    const sD = 75;
+    sunLight.shadow.camera.left = -sD; sunLight.shadow.camera.right = sD;
+    sunLight.shadow.camera.top = sD; sunLight.shadow.camera.bottom = -sD;
+    sunLight.shadow.bias = -0.00015;
+    scene.add(sunLight);
+
+    const keyLight1 = new THREE.PointLight('#f59e0b', 1.8, 30, 1.4);
+    keyLight1.position.set(0, 4.0, -15);
+    scene.add(keyLight1);
+
+    const keyLight2 = new THREE.PointLight('#f59e0b', 1.8, 30, 1.4);
+    keyLight2.position.set(0, 4.0, 15);
+    scene.add(keyLight2);
+
+    // ============================================================
+    // 4. MATERIALES
+    // ============================================================
+    const { diffTex, bumpTex } = generateVillageAtlas();
+    const lightPoolTex = generateLightPoolTexture();
+    const stoneData = generateStoneTexture();
+
+    const villageMaterial = new THREE.MeshStandardMaterial({
+      map: diffTex, bumpMap: bumpTex, bumpScale: 0.04, roughness: 0.85, metalness: 0.12
+    });
+
+    villageMaterial.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <common>',
+        `#include <common>
+         attribute vec3 aBlend;
+         varying vec3 vBlend;
+         varying vec3 vWorldPos;`
+      ).replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         vBlend = aBlend;
+         #ifdef USE_INSTANCING
+           vWorldPos = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
+         #else
+           vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+         #endif`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `#include <common>
+         varying vec3 vBlend;
+         varying vec3 vWorldPos;
+         float hash21(vec2 p) {
+           p = fract(p * vec2(234.34, 435.345));
+           p += dot(p, p + 34.23);
+           return fract(p.x * p.y);
+         }
+         float smoothNoise(vec2 uv) {
+           vec2 lv = fract(uv); vec2 id = floor(uv);
+           lv = lv * lv * (3.0 - 2.0 * lv);
+           return mix(mix(hash21(id), hash21(id + vec2(1.0, 0.0)), lv.x),
+                      mix(hash21(id + vec2(0.0, 1.0)), hash21(id + vec2(1.0, 1.0)), lv.x), lv.y);
+         }`
+      ).replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         vec2 noiseUV = vWorldPos.xz * 1.5 + vec2(vWorldPos.y * 0.8);
+         float organicNoise = smoothNoise(noiseUV) * 0.7 + smoothNoise(noiseUV * 3.5) * 0.3;
+         float dirtMask = clamp(vBlend.x * (0.6 + 0.8 * organicNoise), 0.0, 1.0);
+         float mossMask = smoothstep(0.28, 0.68, vBlend.y * (0.5 + 0.9 * organicNoise));
+         float streakNoise = smoothNoise(vec2(vWorldPos.x * 10.0, vWorldPos.y * 1.8));
+         float streakMask = clamp(vBlend.z * smoothstep(0.35, 0.75, streakNoise), 0.0, 1.0);
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.10, 0.08), dirtMask * 0.85);
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.09, 0.08, 0.07), streakMask * 0.75);
+         diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.16, 0.25, 0.08), vec3(0.28, 0.38, 0.12), organicNoise), mossMask * 0.92);`
+      );
+    };
+
+    // Material de piedra CLARO y visible
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      map: stoneData.diffTex,
+      bumpMap: stoneData.bumpTex,
+      bumpScale: 0.04,
+      roughness: 0.9,
+      metalness: 0.05,
+      color: 0xffffff  // sin tinte, deja que la textura clara se vea
+    });
+
+    const ironMaterial = new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.45, metalness: 0.85 });
+    const lanternGlowMaterial = new THREE.MeshStandardMaterial({ color: '#ffedd5', emissive: '#f59e0b', emissiveIntensity: 2.8, roughness: 0.2 });
+    const lightPoolMaterial = new THREE.MeshBasicMaterial({ map: lightPoolTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    const foliageMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.75, metalness: 0.05 });
+
+    const crystalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x67e8f9, emissive: 0x22d3ee, emissiveIntensity: 2.8, roughness: 0.15, metalness: 0.15
+    });
+    const centralCrystalMaterial = new THREE.MeshStandardMaterial({
+      color: 0xa5f3fc, emissive: 0x22d3ee, emissiveIntensity: 4.2, roughness: 0.1, metalness: 0.2
+    });
+    const towerRoofMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4c1d95, emissive: 0x2e1065, emissiveIntensity: 0.6, roughness: 0.55, metalness: 0.35
+    });
+    const goldMaterial = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24, emissive: 0x78350f, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.9
+    });
+
+    const sharedMaterials = new Set([
+      villageMaterial, wallMaterial, ironMaterial, lanternGlowMaterial,
+      lightPoolMaterial, foliageMaterial, crystalMaterial, centralCrystalMaterial,
+      towerRoofMaterial, goldMaterial
+    ]);
+
+    // ============================================================
+    // 5. HELPERS DE GEOMETRÍA
+    // ============================================================
+    function applyQuadrantUVs(geometry, vMin, vMax) {
+      const uvs = geometry.attributes.uv;
+      for (let i = 0; i < uvs.count; i++) {
+        uvs.setY(i, vMin + uvs.getY(i) * (vMax - vMin));
+      }
+      uvs.needsUpdate = true;
+    }
+    function setTilingUVs(geometry, su, sv) {
+      const pos = geometry.attributes.position;
+      const uvs = geometry.attributes.uv;
+      for (let i = 0; i < uvs.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        uvs.setXY(i, (x + z) * su, y * sv);
+      }
+      uvs.needsUpdate = true;
+    }
+    function scaleUVs(geometry, su, sv) {
+      const uvs = geometry.attributes.uv;
+      for (let i = 0; i < uvs.count; i++) {
+        uvs.setXY(i, uvs.getX(i) * su, uvs.getY(i) * sv);
+      }
+      uvs.needsUpdate = true;
+    }
+    function addBlendWeights(geometry, computeFn) {
+      const pos = geometry.attributes.position;
+      const arr = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        const [r, g, b] = computeFn(pos.getX(i), pos.getY(i), pos.getZ(i));
+        arr[i * 3] = r; arr[i * 3 + 1] = g; arr[i * 3 + 2] = b;
+      }
+      geometry.setAttribute('aBlend', new THREE.BufferAttribute(arr, 3));
+    }
+
+    function createWatertightRoofGeometry(width, depth, ridgeHeight, overhangX, overhangZ, thickness) {
+      const hw = width * 0.5, slope = ridgeHeight / hw, eaveDrop = slope * overhangX, totalDepth = depth + overhangZ * 2.0;
+      const shape = new THREE.Shape();
+      shape.moveTo(0, ridgeHeight + thickness);
+      shape.lineTo(-hw - overhangX, -eaveDrop + thickness);
+      shape.lineTo(-hw - overhangX, -eaveDrop);
+      shape.lineTo(-hw, 0.0);
+      shape.lineTo(0, ridgeHeight);
+      shape.lineTo(hw, 0.0);
+      shape.lineTo(hw + overhangX, -eaveDrop);
+      shape.lineTo(hw + overhangX, -eaveDrop + thickness);
+      shape.closePath();
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: totalDepth, bevelEnabled: false });
+      geom.translate(0, 0, -totalDepth * 0.5);
+      applyQuadrantUVs(geom, 0.75, 1.00);
+      geom.computeVertexNormals();
+      addBlendWeights(geom, (x, y) => [y <= 0.05 ? 0.7 : 0.35, y <= 0.05 ? 0.45 : 0.05, 0.1]);
+      return geom;
+    }
+
+    function createGableWallGeometry(width, ridgeHeight, thickness) {
+      const hw = width * 0.5, shape = new THREE.Shape();
+      shape.moveTo(-hw, 0.0); shape.lineTo(hw, 0.0); shape.lineTo(0, ridgeHeight); shape.closePath();
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: thickness, bevelEnabled: false });
+      geom.translate(0, 0, -thickness * 0.5);
+      applyQuadrantUVs(geom, 0.50, 0.75);
+      geom.computeVertexNormals();
+      addBlendWeights(geom, (x, y) => [(y / ridgeHeight) * 0.65, 0.0, 0.2]);
+      return geom;
+    }
+
+    function createWallSegmentGeometry(length, height, thickness, merlonCount = 4) {
+      const merlonH = 0.9;
+      const margin = 0.25;
+      const usable = length - margin * 2;
+      const unit = usable / (merlonCount * 2 - 1);
+
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.lineTo(length, 0);
+      shape.lineTo(length, height);
+      for (let i = merlonCount - 1; i >= 0; i--) {
+        const mStart = margin + i * 2 * unit;
+        const mEnd = mStart + unit;
+        shape.lineTo(mEnd, height);
+        shape.lineTo(mEnd, height + merlonH);
+        shape.lineTo(mStart, height + merlonH);
+        shape.lineTo(mStart, height);
+      }
+      shape.lineTo(0, height);
+      shape.lineTo(0, 0);
+      shape.closePath();
+
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: thickness, bevelEnabled: false });
+      geom.translate(-length * 0.5, 0, -thickness * 0.5);
+      geom.computeVertexNormals();
+      setTilingUVs(geom, 0.4, 0.4);
+      return geom;
+    }
+
+    function createGateGeometry(width, height, thickness, openingWidth, openingHeight) {
+      const hw = width * 0.5;
+      const shape = new THREE.Shape();
+      shape.moveTo(-hw, 0);
+      shape.lineTo(hw, 0);
+      shape.lineTo(hw, height);
+      shape.lineTo(-hw, height);
+      shape.lineTo(-hw, 0);
+
+      const ohw = openingWidth * 0.5;
+      const archR = ohw;
+      const straightH = openingHeight - archR;
+      const hole = new THREE.Path();
+      hole.moveTo(-ohw, 0);
+      hole.lineTo(-ohw, straightH);
+      hole.absarc(0, straightH, archR, Math.PI, 0, true);
+      hole.lineTo(ohw, 0);
+      hole.lineTo(-ohw, 0);
+      shape.holes.push(hole);
+
+      const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: thickness, bevelEnabled: false });
+      geom.translate(0, 0, -thickness * 0.5);
+      geom.computeVertexNormals();
+      setTilingUVs(geom, 0.4, 0.4);
+      return geom;
+    }
+
+    function createTowerBodyGeometry(radius, height, segments = 12) {
+      const geom = new THREE.CylinderGeometry(radius, radius * 1.06, height, segments, 1);
+      geom.translate(0, height * 0.5, 0);
+      scaleUVs(geom, 6, 3);
+      return geom;
+    }
+
+    function createTowerRoofGeometry(radius, height, segments = 12) {
+      const geom = new THREE.ConeGeometry(radius, height, segments, 1);
+      geom.translate(0, height * 0.5, 0);
+      return geom;
+    }
+
+    // ============================================================
+    // 6. GENERADOR PROCEDURAL DEL PUEBLO AMURALLADO
+    // ============================================================
+    class ProceduralVillageGenerator {
+      constructor(scene) {
+        this.scene = scene;
+        this.activeMeshes = [];
+        this.activeLights = [];
+        this.monumentCrystal = null;
+        this.monumentRing = null;
+        this.crystalLight = null;
+        this.monumentBaseY = 5.3;
+        this.baseCrystalIntensity = 2.5;
+      }
+
+      cleanup() {
+        this.activeMeshes.forEach(mesh => {
+          this.scene.remove(mesh);
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material && mesh.material.dispose && !sharedMaterials.has(mesh.material)) {
+            mesh.material.dispose();
+          }
+        });
+        this.activeLights.forEach(light => this.scene.remove(light));
+        this.activeMeshes = [];
+        this.activeLights = [];
+        this.monumentCrystal = null;
+        this.monumentRing = null;
+        this.crystalLight = null;
+      }
+
+      update(elapsed) {
+        if (this.monumentCrystal) {
+          this.monumentCrystal.rotation.y = elapsed * 0.6;
+          this.monumentCrystal.position.y = this.monumentBaseY + Math.sin(elapsed * 1.6) * 0.25;
+        }
+        if (this.monumentRing) {
+          this.monumentRing.rotation.y = -elapsed * 0.5;
+          this.monumentRing.rotation.x = Math.sin(elapsed * 0.8) * 0.4;
+          this.monumentRing.position.y = this.monumentBaseY + Math.sin(elapsed * 1.6) * 0.25;
+        }
+        if (this.crystalLight) {
+          this.crystalLight.intensity = this.baseCrystalIntensity * (1 + Math.sin(elapsed * 2.5) * 0.25);
+        }
+      }
+
+      generate(params) {
+        try {
+          this.cleanup();
+          const prng = new PRNG(params.seed);
+
+          const HOUSE_W = 6.0, HOUSE_D = 7.5, FLOOR_H = 2.8, PLINTH_H = 0.5, ROOF_H = 1.8;
+          const streetWidth = 7.0, sidewalkWidth = 2.0, lotDepth = 12.0, lotFront = 10.0;
+          const totalSpan = 80.0;
+          const streetLength = 110.0;
+
+          // Suelo
+          const groundGeom = new THREE.PlaneGeometry(180, 180);
+          groundGeom.rotateX(-Math.PI / 2);
+          const groundMat = new THREE.MeshStandardMaterial({ color: '#2a3544', roughness: 0.95 });
+          const groundMesh = new THREE.Mesh(groundGeom, groundMat);
+          groundMesh.receiveShadow = true;
+          this.scene.add(groundMesh);
+          this.activeMeshes.push(groundMesh);
+
+          // Calle
+          const streetGeom = new THREE.PlaneGeometry(streetWidth, streetLength);
+          streetGeom.rotateX(-Math.PI / 2);
+          const streetMat = new THREE.MeshStandardMaterial({ color: '#141c2b', roughness: 0.85 });
+          const streetMesh = new THREE.Mesh(streetGeom, streetMat);
+          streetMesh.position.y = 0.02;
+          streetMesh.receiveShadow = true;
+          this.scene.add(streetMesh);
+          this.activeMeshes.push(streetMesh);
+
+          // Parcelas
+          const houses = [], lamps = [], trees = [], hedges = [];
+          const sides = [-1, 1];
+          const halfStreet = (streetWidth * 0.5) + sidewalkWidth;
+
+          sides.forEach(side => {
+            const startZ = -totalSpan * 0.40;
+            const endZ = totalSpan * 0.40;
+            for (let z = startZ; z <= endZ; z += lotFront) {
+              const hasHouse = prng.next() <= (params.density / 100);
+              const lotX = side * (halfStreet + lotDepth * 0.5);
+              if (hasHouse) {
+                const floors = prng.rangeInt(1, params.floors);
+                const houseRot = side === 1 ? Math.PI : 0;
+                const tint = prng.choice([0xffffff, 0xfef3c7, 0xf1f5f9, 0xffedd5, 0xf8fafc]);
+                houses.push({
+                  x: lotX + prng.range(-0.4, 0.4),
+                  z: z + prng.range(-0.4, 0.4),
+                  rotY: houseRot + prng.range(-0.03, 0.03),
+                  floors, tint, chimney: prng.next() > 0.4
+                });
+              } else if (prng.next() <= (params.vegetation / 100)) {
+                trees.push({
+                  x: lotX + prng.range(-2, 2),
+                  z: z + prng.range(-2, 2),
+                  s: prng.range(0.9, 1.25),
+                  tone: prng.choice([0x22543d, 0x2f855a, 0x276749, 0x1c4532])
+                });
+              }
+              if (prng.next() <= (params.vegetation / 100) * 0.8) {
+                hedges.push({ x: side * (halfStreet + 1.2), z, rotY: 0 });
+              }
+            }
+          });
+
+          for (let lz = -totalSpan * 0.38; lz <= totalSpan * 0.38; lz += 14.0) {
+            lamps.push({ x: -(streetWidth * 0.5 + 0.8), z: lz, rotY: 0 });
+            lamps.push({ x: (streetWidth * 0.5 + 0.8), z: lz, rotY: Math.PI });
+          }
+
+          const perimeterCount = Math.floor(20 * (params.vegetation / 100));
+          for (let i = 0; i < perimeterCount; i++) {
+            const angle = (i / perimeterCount) * Math.PI * 2 + prng.range(-0.1, 0.1);
+            const rx = 40 + prng.range(0, 10);
+            const rz = 55 + prng.range(0, 10);
+            trees.push({
+              x: Math.cos(angle) * rx,
+              z: Math.sin(angle) * rz,
+              s: prng.range(1.0, 1.4),
+              tone: prng.choice([0x22543d, 0x2f855a, 0x1c4532])
+            });
+          }
+
+          // Instanced de casas
+          const plinthGeom = new THREE.BoxGeometry(HOUSE_W + 0.25, PLINTH_H, HOUSE_D + 0.25);
+          applyQuadrantUVs(plinthGeom, 0.25, 0.50);
+          addBlendWeights(plinthGeom, (x, y) => [y < 0 ? 0.75 : 0.3, y < 0 ? 0.85 : 0.25, 0.0]);
+
+          const wallFloorGeom = new THREE.BoxGeometry(HOUSE_W, FLOOR_H, HOUSE_D);
+          applyQuadrantUVs(wallFloorGeom, 0.50, 0.75);
+          addBlendWeights(wallFloorGeom, (x, y) => {
+            const nY = (y + FLOOR_H * 0.5) / FLOOR_H;
+            return [(1.0 - nY) * 0.2 + nY * 0.7, (1.0 - nY) * 0.6, (1.0 - nY) * 0.4];
+          });
+
+          const roofGeom = createWatertightRoofGeometry(HOUSE_W, HOUSE_D, ROOF_H, 0.45, 0.55, 0.18);
+          const gableGeom = createGableWallGeometry(HOUSE_W, ROOF_H, 0.25);
+
+          const winFrameGeom = new THREE.BoxGeometry(1.2, 1.5, 0.3);
+          applyQuadrantUVs(winFrameGeom, 0.0, 0.25);
+          addBlendWeights(winFrameGeom, () => [0.3, 0.0, 0.1]);
+
+          const winSillGeom = new THREE.BoxGeometry(1.4, 0.12, 0.45);
+          winSillGeom.translate(0, -0.75, 0.05);
+          applyQuadrantUVs(winSillGeom, 0.25, 0.50);
+          addBlendWeights(winSillGeom, () => [0.6, 0.0, 0.85]);
+
+          const doorGeom = new THREE.BoxGeometry(1.4, 2.3, 0.35);
+          applyQuadrantUVs(doorGeom, 0.0, 0.25);
+          addBlendWeights(doorGeom, (x, y) => [0.4, y < 0 ? 0.5 : 0.0, 0.0]);
+
+          const chimneyGeom = new THREE.BoxGeometry(0.9, 2.4, 0.9);
+          applyQuadrantUVs(chimneyGeom, 0.25, 0.50);
+          addBlendWeights(chimneyGeom, (x, y) => [y > 0.5 ? 0.95 : 0.3, 0.0, 0.4]);
+
+          let totalFloors = 0, totalWindows = 0, totalChimneys = 0;
+          houses.forEach(h => {
+            totalFloors += h.floors;
+            totalWindows += h.floors === 1 ? 3 : (3 + (h.floors - 1) * 4);
+            if (h.chimney) totalChimneys++;
+          });
+
+          const plinthInst = new THREE.InstancedMesh(plinthGeom, villageMaterial, Math.max(1, houses.length));
+          const wallInst = new THREE.InstancedMesh(wallFloorGeom, villageMaterial, Math.max(1, totalFloors));
+          const roofInst = new THREE.InstancedMesh(roofGeom, villageMaterial, Math.max(1, houses.length));
+          const gableInst = new THREE.InstancedMesh(gableGeom, villageMaterial, Math.max(1, houses.length * 2));
+          const winInst = new THREE.InstancedMesh(winFrameGeom, villageMaterial, Math.max(1, totalWindows));
+          const sillInst = new THREE.InstancedMesh(winSillGeom, villageMaterial, Math.max(1, totalWindows));
+          const doorInst = new THREE.InstancedMesh(doorGeom, villageMaterial, Math.max(1, houses.length));
+          const chimneyInst = new THREE.InstancedMesh(chimneyGeom, villageMaterial, Math.max(1, totalChimneys));
+
+          const dummyMat = new THREE.Matrix4();
+          const dummyPos = new THREE.Vector3();
+          const dummyQuat = new THREE.Quaternion();
+          const dummyScale = new THREE.Vector3(1, 1, 1);
+          const yAxis = new THREE.Vector3(0, 1, 0);
+          const whiteColor = new THREE.Color(0xffffff);
+          const tintColor = new THREE.Color();
+          const identQ = new THREE.Quaternion();
+
+          let plinthIdx = 0, wallIdx = 0, roofIdx = 0, gableIdx = 0, winIdx = 0, doorIdx = 0, chimIdx = 0;
+
+          houses.forEach(house => {
+            tintColor.setHex(house.tint);
+            const houseRot = new THREE.Quaternion().setFromAxisAngle(yAxis, house.rotY);
+            const basePos = new THREE.Vector3(house.x, 0, house.z);
+
+            const setInst = (mesh, idx, lx, ly, lz, localQ, color = whiteColor) => {
+              dummyPos.set(lx, ly, lz).applyQuaternion(houseRot).add(basePos);
+              dummyQuat.copy(houseRot).multiply(localQ);
+              dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+              mesh.setMatrixAt(idx, dummyMat);
+              mesh.setColorAt(idx, color);
+            };
+
+            setInst(plinthInst, plinthIdx++, 0, PLINTH_H * 0.5, 0, identQ, whiteColor);
+
+            for (let f = 0; f < house.floors; f++) {
+              const floorY = PLINTH_H + FLOOR_H * 0.5 + f * FLOOR_H;
+              setInst(wallInst, wallIdx++, 0, floorY, 0, identQ, tintColor);
+              if (f === 0) {
+                setInst(doorInst, doorIdx++, 0, PLINTH_H + 1.15, HOUSE_D * 0.5 + 0.1, identQ, whiteColor);
+                [-1.8, 1.8].forEach(wx => {
+                  setInst(winInst, winIdx, wx, floorY, HOUSE_D * 0.5 + 0.08, identQ, whiteColor);
+                  setInst(sillInst, winIdx, wx, floorY, HOUSE_D * 0.5 + 0.08, identQ, whiteColor);
+                  winIdx++;
+                });
+                const backQ = new THREE.Quaternion().setFromAxisAngle(yAxis, Math.PI);
+                setInst(winInst, winIdx, 0, floorY, -HOUSE_D * 0.5 - 0.08, backQ, whiteColor);
+                setInst(sillInst, winIdx, 0, floorY, -HOUSE_D * 0.5 - 0.08, backQ, whiteColor);
+                winIdx++;
+              } else {
+                const backQ = new THREE.Quaternion().setFromAxisAngle(yAxis, Math.PI);
+                [-1.8, 1.8].forEach(wx => {
+                  setInst(winInst, winIdx, wx, floorY, HOUSE_D * 0.5 + 0.08, identQ, whiteColor);
+                  setInst(sillInst, winIdx, wx, floorY, HOUSE_D * 0.5 + 0.08, identQ, whiteColor);
+                  winIdx++;
+                });
+                [-1.5, 1.5].forEach(wx => {
+                  setInst(winInst, winIdx, wx, floorY, -HOUSE_D * 0.5 - 0.08, backQ, whiteColor);
+                  setInst(sillInst, winIdx, wx, floorY, -HOUSE_D * 0.5 - 0.08, backQ, whiteColor);
+                  winIdx++;
+                });
+              }
+            }
+            const wallTopY = PLINTH_H + house.floors * FLOOR_H;
+            const frontGableQ = new THREE.Quaternion();
+            const backGableQ = new THREE.Quaternion().setFromAxisAngle(yAxis, Math.PI);
+            setInst(gableInst, gableIdx++, 0, wallTopY, HOUSE_D * 0.5 - 0.125, frontGableQ, tintColor);
+            setInst(gableInst, gableIdx++, 0, wallTopY, -HOUSE_D * 0.5 + 0.125, backGableQ, tintColor);
+            setInst(roofInst, roofIdx++, 0, wallTopY, 0, identQ, whiteColor);
+            if (house.chimney) setInst(chimneyInst, chimIdx++, 1.5, wallTopY + 1.2, 1.2, identQ, whiteColor);
+          });
+
+          // Farolas
+          const lampPostGeom = new THREE.CylinderGeometry(0.1, 0.18, 3.8, 8);
+          lampPostGeom.translate(0, 1.9, 0);
+          const glassGeom = new THREE.CylinderGeometry(0.18, 0.12, 0.38, 4);
+          glassGeom.rotateY(Math.PI / 4);
+          const poolGeom = new THREE.PlaneGeometry(6.5, 6.5);
+          poolGeom.rotateX(-Math.PI / 2);
+
+          const lampInst = new THREE.InstancedMesh(lampPostGeom, ironMaterial, Math.max(1, lamps.length));
+          const glassInst = new THREE.InstancedMesh(glassGeom, lanternGlowMaterial, Math.max(1, lamps.length));
+          const poolInst = new THREE.InstancedMesh(poolGeom, lightPoolMaterial, Math.max(1, lamps.length));
+
+          lamps.forEach((lamp, i) => {
+            dummyPos.set(lamp.x, 0, lamp.z);
+            dummyQuat.setFromAxisAngle(yAxis, lamp.rotY);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            lampInst.setMatrixAt(i, dummyMat);
+            dummyPos.set(lamp.x, 3.7, lamp.z);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            glassInst.setMatrixAt(i, dummyMat);
+            dummyPos.set(lamp.x, 0.03, lamp.z);
+            dummyMat.compose(dummyPos, identQ, dummyScale);
+            poolInst.setMatrixAt(i, dummyMat);
+          });
+
+          // Vegetación
+          const trunkGeom = new THREE.CylinderGeometry(0.2, 0.38, 3.2, 7);
+          applyQuadrantUVs(trunkGeom, 0.0, 0.25);
+          trunkGeom.translate(0, 1.6, 0);
+          const canopyGeom = new THREE.IcosahedronGeometry(1.6, 1);
+          canopyGeom.translate(0, 3.8, 0);
+          const hedgeGeom = new THREE.BoxGeometry(2.4, 0.9, 0.9);
+          hedgeGeom.translate(0, 0.45, 0);
+
+          const trunkInst = new THREE.InstancedMesh(trunkGeom, villageMaterial, Math.max(1, trees.length));
+          const canopyInst = new THREE.InstancedMesh(canopyGeom, foliageMaterial, Math.max(1, trees.length));
+          const hedgeInst = new THREE.InstancedMesh(hedgeGeom, foliageMaterial, Math.max(1, hedges.length));
+
+          const vegColor = new THREE.Color();
+          trees.forEach((t, i) => {
+            dummyPos.set(t.x, 0, t.z);
+            dummyQuat.setFromAxisAngle(yAxis, prng.range(0, Math.PI * 2));
+            dummyScale.set(t.s, t.s, t.s);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            trunkInst.setMatrixAt(i, dummyMat);
+            canopyInst.setMatrixAt(i, dummyMat);
+            vegColor.setHex(t.tone);
+            canopyInst.setColorAt(i, vegColor);
+          });
+          dummyScale.set(1, 1, 1);
+          hedges.forEach((h, i) => {
+            dummyPos.set(h.x, 0, h.z);
+            dummyQuat.setFromAxisAngle(yAxis, h.rotY);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            hedgeInst.setMatrixAt(i, dummyMat);
+            vegColor.setHex(i % 2 === 0 ? 0x276749 : 0x22543d);
+            hedgeInst.setColorAt(i, vegColor);
+          });
+
+          // ==========================================
+          // MURALLAS Y TORRES
+          // ==========================================
+          const WALL_HALF_X = 28, WALL_HALF_Z = 46, WALL_SEG_LEN = 7, WALL_H = 6.5, WALL_T = 1.6;
+          const wallSegments = [];
+          const towers = [];
+
+          // Muro norte (sólido)
+          for (let x = -WALL_HALF_X + WALL_SEG_LEN * 0.5; x < WALL_HALF_X; x += WALL_SEG_LEN)
+            wallSegments.push({ x, z: -WALL_HALF_Z, rotY: 0 });
+          // Muro sur (con hueco central para la puerta)
+          for (let x = -WALL_HALF_X + WALL_SEG_LEN * 0.5; x < WALL_HALF_X; x += WALL_SEG_LEN) {
+            if (Math.abs(x) < 8) continue;
+            wallSegments.push({ x, z: WALL_HALF_Z, rotY: 0 });
+          }
+          // Muros este/oeste
+          for (let z = -WALL_HALF_Z + WALL_SEG_LEN * 0.5; z < WALL_HALF_Z; z += WALL_SEG_LEN) {
+            wallSegments.push({ x: WALL_HALF_X, z, rotY: Math.PI * 0.5 });
+            wallSegments.push({ x: -WALL_HALF_X, z, rotY: Math.PI * 0.5 });
+          }
+
+          // Torres esquineras
+          [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx, sz]) =>
+            towers.push({ x: sx * WALL_HALF_X, z: sz * WALL_HALF_Z, s: 1.4, gate: false })
+          );
+          // Torres intermedias este/oeste
+          towers.push({ x: WALL_HALF_X, z: 0, s: 1.1, gate: false });
+          towers.push({ x: -WALL_HALF_X, z: 0, s: 1.1, gate: false });
+          // Torres de la puerta
+          towers.push({ x: -7.5, z: WALL_HALF_Z, s: 1.3, gate: true });
+          towers.push({ x: 7.5, z: WALL_HALF_Z, s: 1.3, gate: true });
+
+          const wallGeom = createWallSegmentGeometry(WALL_SEG_LEN, WALL_H, WALL_T, 4);
+          const wallSegInst = new THREE.InstancedMesh(wallGeom, wallMaterial, Math.max(1, wallSegments.length));
+
+          const towerBodyGeom = createTowerBodyGeometry(2.4, 10.0, 12);
+          const towerRoofGeom = createTowerRoofGeometry(3.2, 4.2, 12);
+          const towerCrystalGeom = new THREE.OctahedronGeometry(0.7, 0);
+
+          const towerBodyInst = new THREE.InstancedMesh(towerBodyGeom, wallMaterial, Math.max(1, towers.length));
+          const towerRoofInst = new THREE.InstancedMesh(towerRoofGeom, towerRoofMaterial, Math.max(1, towers.length));
+          const towerCrystalInst = new THREE.InstancedMesh(towerCrystalGeom, crystalMaterial, Math.max(1, towers.length));
+
+          wallSegments.forEach((seg, i) => {
+            dummyPos.set(seg.x, 0, seg.z);
+            dummyQuat.setFromAxisAngle(yAxis, seg.rotY);
+            dummyScale.set(1, 1, 1);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            wallSegInst.setMatrixAt(i, dummyMat);
+          });
+
+          towers.forEach((t, i) => {
+            // Cuerpo (usa set(0,0,0,1) en lugar de identity() por compatibilidad con r128)
+            dummyPos.set(t.x, 0, t.z);
+            dummyQuat.set(0, 0, 0, 1);
+            dummyScale.set(t.s, t.s, t.s);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            towerBodyInst.setMatrixAt(i, dummyMat);
+            // Tejado cónico
+            dummyPos.set(t.x, 10.0 * t.s, t.z);
+            dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+            towerRoofInst.setMatrixAt(i, dummyMat);
+            // Cristal en la cúspide
+            dummyPos.set(t.x, (10.0 + 4.2) * t.s + 0.6, t.z);
+            dummyScale.set(t.s * 0.9, t.s * 1.1, t.s * 0.9);
+            dummyMat.compose(dummyPos, identQ, dummyScale);
+            towerCrystalInst.setMatrixAt(i, dummyMat);
+          });
+
+          // Puerta principal con arco
+          const gateMesh = new THREE.Mesh(createGateGeometry(15, 8.5, WALL_T, 9.0, 5.5), wallMaterial);
+          gateMesh.position.set(0, 0, WALL_HALF_Z);
+          gateMesh.castShadow = true;
+          gateMesh.receiveShadow = true;
+          this.scene.add(gateMesh);
+          this.activeMeshes.push(gateMesh);
+
+          // Cristal sobre la puerta
+          const gateCrystalGeom = new THREE.OctahedronGeometry(1.1, 0);
+          gateCrystalGeom.scale(1, 1.3, 1);
+          const gateCrystal = new THREE.Mesh(gateCrystalGeom, crystalMaterial);
+          gateCrystal.position.set(0, 10.0, WALL_HALF_Z);
+          this.scene.add(gateCrystal);
+          this.activeMeshes.push(gateCrystal);
+
+          const gateLight = new THREE.PointLight(0x22d3ee, 2.2, 22, 1.6);
+          gateLight.position.set(0, 10.0, WALL_HALF_Z);
+          this.scene.add(gateLight);
+          this.activeLights.push(gateLight);
+
+          // ==========================================
+          // MONUMENTO CENTRAL MÁGICO
+          // ==========================================
+          const monBaseGeom = new THREE.CylinderGeometry(3.6, 4.2, 1.0, 16);
+          monBaseGeom.translate(0, 0.5, 0);
+          scaleUVs(monBaseGeom, 6, 1);
+          const monBase = new THREE.Mesh(monBaseGeom, wallMaterial);
+          monBase.castShadow = true; monBase.receiveShadow = true;
+          this.scene.add(monBase); this.activeMeshes.push(monBase);
+
+          const monPillarGeom = new THREE.CylinderGeometry(0.8, 1.1, 3.0, 8);
+          monPillarGeom.translate(0, 2.5, 0);
+          scaleUVs(monPillarGeom, 3, 2);
+          const monPillar = new THREE.Mesh(monPillarGeom, wallMaterial);
+          monPillar.castShadow = true; monPillar.receiveShadow = true;
+          this.scene.add(monPillar); this.activeMeshes.push(monPillar);
+
+          const crystalGeom = new THREE.OctahedronGeometry(1.35, 0);
+          crystalGeom.scale(1, 1.5, 1);
+          const monCrystal = new THREE.Mesh(crystalGeom, centralCrystalMaterial);
+          monCrystal.position.set(0, this.monumentBaseY, 0);
+          monCrystal.castShadow = true;
+          this.scene.add(monCrystal);
+          this.activeMeshes.push(monCrystal);
+          this.monumentCrystal = monCrystal;
+
+          const ringGeom = new THREE.TorusGeometry(2.1, 0.1, 8, 32);
+          const monRing = new THREE.Mesh(ringGeom, goldMaterial);
+          monRing.position.set(0, this.monumentBaseY, 0);
+          monRing.rotation.x = Math.PI * 0.5;
+          this.scene.add(monRing);
+          this.activeMeshes.push(monRing);
+          this.monumentRing = monRing;
+
+          const crystalLight = new THREE.PointLight(0x22d3ee, 2.5, 30, 1.4);
+          crystalLight.position.set(0, this.monumentBaseY, 0);
+          this.scene.add(crystalLight);
+          this.activeLights.push(crystalLight);
+          this.crystalLight = crystalLight;
+
+          // Añadir todas las instanced meshes a la escena
+          const allInstanced = [
+            plinthInst, wallInst, roofInst, gableInst, winInst, sillInst, doorInst, chimneyInst,
+            lampInst, glassInst, poolInst, trunkInst, canopyInst, hedgeInst,
+            wallSegInst, towerBodyInst, towerRoofInst, towerCrystalInst
+          ];
+          allInstanced.forEach(mesh => {
+            mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.instanceMatrix.needsUpdate = true;
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            this.scene.add(mesh);
+            this.activeMeshes.push(mesh);
+          });
+
+          // Estadísticas
+          document.getElementById('stat-houses').textContent = houses.length;
+          document.getElementById('stat-walls').textContent =
+            wallSegments.length + ' / ' + towers.length;
+          document.getElementById('stat-lamps').textContent = lamps.length + 1;
+          document.getElementById('stat-veg').textContent = trees.length + hedges.length;
+
+          console.log('✓ Pueblo generado:', {
+            casas: houses.length,
+            muros: wallSegments.length,
+            torres: towers.length,
+            arboles: trees.length,
+            setos: hedges.length,
+            farolas: lamps.length
+          });
+        } catch (err) {
+          console.error('Error generando pueblo:', err);
+        }
+      }
+    }
+
+    // ============================================================
+    // 7. AMBIENTE LUMÍNICO
+    // ============================================================
+    function updateLighting(timePreset) {
+      if (timePreset === 'noon') {
+        scene.background = new THREE.Color('#9ab1c7');
+        scene.fog = new THREE.FogExp2('#9ab1c7', 0.006);
+        hemiLight.color.set('#bae6fd'); hemiLight.intensity = 0.8;
+        sunLight.color.set('#fffbeb'); sunLight.intensity = 1.4;
+        sunLight.position.set(40, 65, 30);
+        lanternGlowMaterial.emissiveIntensity = 0.2;
+        lightPoolMaterial.opacity = 0.1;
+        keyLight1.intensity = 0.0; keyLight2.intensity = 0.0;
+        crystalMaterial.emissiveIntensity = 0.8;
+        centralCrystalMaterial.emissiveIntensity = 1.2;
+        towerRoofMaterial.emissiveIntensity = 0.3;
+        generator.baseCrystalIntensity = 0.6;
+      } else if (timePreset === 'sunset') {
+        scene.background = new THREE.Color('#1a2340');
+        scene.fog = new THREE.FogExp2('#1a2340', 0.008);
+        hemiLight.color.set('#60a5fa'); hemiLight.intensity = 0.5;
+        sunLight.color.set('#fdba74'); sunLight.intensity = 0.9;
+        sunLight.position.set(50, 35, 25);
+        lanternGlowMaterial.emissiveIntensity = 2.8;
+        lightPoolMaterial.opacity = 1.0;
+        keyLight1.intensity = 1.8; keyLight2.intensity = 1.8;
+        crystalMaterial.emissiveIntensity = 2.8;
+        centralCrystalMaterial.emissiveIntensity = 4.2;
+        towerRoofMaterial.emissiveIntensity = 0.8;
+        generator.baseCrystalIntensity = 2.8;
+      } else if (timePreset === 'night') {
+        scene.background = new THREE.Color('#0a1128');
+        scene.fog = new THREE.FogExp2('#0a1128', 0.012);
+        hemiLight.color.set('#3b82f6'); hemiLight.intensity = 0.25;
+        sunLight.color.set('#60a5fa'); sunLight.intensity = 0.25;
+        sunLight.position.set(20, 40, -20);
+        lanternGlowMaterial.emissiveIntensity = 4.2;
+        lightPoolMaterial.opacity = 1.0;
+        keyLight1.intensity = 2.5; keyLight2.intensity = 2.5;
+        crystalMaterial.emissiveIntensity = 4.0;
+        centralCrystalMaterial.emissiveIntensity = 5.5;
+        towerRoofMaterial.emissiveIntensity = 1.5;
+        generator.baseCrystalIntensity = 4.5;
+      }
+    }
+
+    // ============================================================
+    // 8. INICIALIZACIÓN Y EVENTOS
+    // ============================================================
+    const generator = new ProceduralVillageGenerator(scene);
+
+    function readAndGenerate() {
+      const params = {
+        seed: parseInt(document.getElementById('param-seed').value, 10),
+        density: parseInt(document.getElementById('param-density').value, 10),
+        floors: parseInt(document.getElementById('param-floors').value, 10),
+        vegetation: parseInt(document.getElementById('param-veg').value, 10),
+        time: document.getElementById('param-time').value
+      };
+      document.getElementById('val-seed').textContent = params.seed;
+      document.getElementById('val-density').textContent = params.density + '%';
+      document.getElementById('val-floors').textContent = params.floors;
+      document.getElementById('val-veg').textContent = params.vegetation + '%';
+
+      generator.generate(params);
+      updateLighting(params.time);
+    }
+
+    document.querySelectorAll('#ui-container input, #ui-container select').forEach(el => {
+      el.addEventListener('input', readAndGenerate);
+    });
+    document.getElementById('btn-regen').addEventListener('click', readAndGenerate);
+    document.getElementById('btn-random').addEventListener('click', () => {
+      document.getElementById('param-seed').value = Math.floor(Math.random() * 99999) + 1;
+      readAndGenerate();
+    });
+
+    readAndGenerate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+      controls.update();
+      generator.update(elapsed);
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
